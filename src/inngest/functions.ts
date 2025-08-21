@@ -30,7 +30,7 @@ export const codeAgentFunction = inngest.createFunction(
 
       if (lastFragment?.fragment?.sandboxUrl) {
         const url = lastFragment.fragment.sandboxUrl;
-        const match = url.match(/https:\/\/3000-([a-zA-Z0-9]+)-[a-zA-Z0-9]+\.e2b\.app/);
+        const match = url.match(/https:\/\/3000-([a-zA-Z0-9]+-[a-zA-Z0-9]+)\.e2b\.app/);
         
         if (match) {
           const existingSandboxId = match[1];
