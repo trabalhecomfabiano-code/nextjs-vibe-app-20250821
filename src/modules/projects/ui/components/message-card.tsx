@@ -1,6 +1,7 @@
 import Image from "next/image";
 import { format } from "date-fns";
-import { ChevronRightIcon, Code2Icon } from "lucide-react";
+import { ChevronRightIcon, Code2Icon, LoaderIcon } from "lucide-react";
+import { useState } from "react";
 
 import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
@@ -24,31 +25,85 @@ interface FragmentCardProps {
   fragment: Fragment;
   isActiveFragment: boolean;
   onFragmentClick: (fragment: Fragment) => void;
+  projectId: string;
 };
 
 const FragmentCard = ({
   fragment,
   isActiveFragment,
   onFragmentClick,
+  projectId,
 }: FragmentCardProps) => {
+  const [isRestoring, setIsRestoring] = useState(false);
+
+  const handleFragmentClick = async () => {
+    if (isRestoring) return;
+
+    // Se não tem commitSha, usar comportamento original
+    if (!fragment.commitSha) {
+      onFragmentClick(fragment);
+      return;
+    }
+
+    // Restaurar commit
+    try {
+      setIsRestoring(true);
+      
+      const response = await fetch('/api/restore-fragment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId: projectId,
+          fragmentId: fragment.id,
+        }),
+      });
+
+      const data = await response.json();
+      
+      if (!data.success) {
+        throw new Error(data.error || 'Erro ao restaurar fragment');
+      }
+
+      // Polling para aguardar resultado da restauração
+      // Por enquanto, fallback para comportamento original
+      console.log('Restauração iniciada:', data.inngestEventId);
+      onFragmentClick(fragment);
+      
+    } catch (error) {
+      console.error('Erro ao restaurar fragment:', error);
+      // Fallback para comportamento original
+      onFragmentClick(fragment);
+    } finally {
+      setIsRestoring(false);
+    }
+  };
+
   return (
     <button
       className={cn(
         "flex items-start text-start gap-2 border rounded-lg bg-muted w-fit p-3 hover:bg-secondary transition-colors",
         isActiveFragment && 
           "bg-primary text-primary-foreground border-primary hover:bg-primary",
+        isRestoring && "opacity-70 cursor-not-allowed",
       )}
-      onClick={() => onFragmentClick(fragment)}
+      onClick={handleFragmentClick}
+      disabled={isRestoring}
     >
-      <Code2Icon className="size-4 mt-0.5" />
+      {isRestoring ? (
+        <LoaderIcon className="size-4 mt-0.5 animate-spin" />
+      ) : (
+        <Code2Icon className="size-4 mt-0.5" />
+      )}
       <div className="flex flex-col flex-1">
         <span className="text-sm font-medium line-clamp-1">
           {fragment.title}
         </span>
-        <span className="text-sm">Preview</span>
+        <span className="text-sm">
+          {isRestoring ? "Restaurando versão..." : "Preview"}
+        </span>
       </div>
       <div className="flex items-center justify-center mt-0.5">
-        <ChevronRightIcon className="size-4" />
+        {!isRestoring && <ChevronRightIcon className="size-4" />}
       </div>
     </button>
   );
@@ -61,6 +116,7 @@ interface AssistantMessageProps {
   isActiveFragment: boolean;
   onFragmentClick: (fragment: Fragment) => void;
   type: MessageType;
+  projectId: string;
 };
 
 const AssistantMessage = ({
@@ -70,6 +126,7 @@ const AssistantMessage = ({
   isActiveFragment,
   onFragmentClick,
   type,
+  projectId,
 }: AssistantMessageProps) => {
   return (
     <div className={cn(
@@ -96,6 +153,7 @@ const AssistantMessage = ({
             fragment={fragment}
             isActiveFragment={isActiveFragment}
             onFragmentClick={onFragmentClick}
+            projectId={projectId}
           />
         )}
       </div>
@@ -111,6 +169,7 @@ interface MessageCardProps {
   isActiveFragment: boolean;
   onFragmentClick: (fragment: Fragment) => void;
   type: MessageType;
+  projectId: string;
 };
 
 export const MessageCard = ({
@@ -121,6 +180,7 @@ export const MessageCard = ({
   isActiveFragment,
   onFragmentClick,
   type,
+  projectId,
 }: MessageCardProps) => {
   if (role === "ASSISTANT") {
     return (
@@ -131,6 +191,7 @@ export const MessageCard = ({
         isActiveFragment={isActiveFragment}
         onFragmentClick={onFragmentClick}
         type={type}
+        projectId={projectId}
       />
     )
   }

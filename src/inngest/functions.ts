@@ -273,8 +273,10 @@ export const codeAgentFunction = inngest.createFunction(
           fragment: {
             create: {
               sandboxUrl: sandboxUrl,
+              sandboxId: sandboxId,
               title: parseAgentOutput(fragmentTitleOuput),
               files: result.state.data.files,
+              repositoryName: `project-${event.data.projectId}`,
             },
           },
         },

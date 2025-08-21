@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { Sandbox } from "@e2b/code-interpreter";
 import { inngest } from "./client";
+import { prisma } from "@/lib/db";
 
 const githubSyncEventSchema = z.object({
   projectId: z.string(),
@@ -98,6 +99,25 @@ export const githubSyncFunction = inngest.createFunction(
         const gitPush = await sandbox.commands.run('git push -u origin master --force');
         if (gitPush.exitCode !== 0) {
           throw new Error(`Git push failed: ${gitPush.stderr}`);
+        }
+        
+        // Obter SHA do último commit
+        console.log("🔍 Obtendo SHA do commit...");
+        const getCommitSha = await sandbox.commands.run('git rev-parse HEAD');
+        const commitSha = getCommitSha.stdout.trim();
+        
+        // Atualizar fragment com commitSha
+        if (commitSha) {
+          console.log(`💾 Salvando commit SHA: ${commitSha}`);
+          await prisma.fragment.updateMany({
+            where: {
+              repositoryName: repoName,
+              commitSha: null, // Apenas fragments sem commitSha ainda
+            },
+            data: {
+              commitSha: commitSha,
+            },
+          });
         }
         
         return {

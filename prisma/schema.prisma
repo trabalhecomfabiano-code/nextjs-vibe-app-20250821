@@ -54,8 +54,11 @@ model Fragment {
   message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
 
   sandboxUrl String
+  sandboxId String? // ID do sandbox E2B para reconexão
   title String
   files Json
+  commitSha String? // SHA do commit no GitHub para restauração
+  repositoryName String? // Nome do repositório no GitHub (ex: project-{projectId})
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
