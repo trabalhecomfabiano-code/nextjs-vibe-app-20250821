@@ -39,7 +39,7 @@ export const codeAgentFunction = inngest.createFunction(
             const sandbox = await Sandbox.connect(existingSandboxId);
             await sandbox.setTimeout(SANDBOX_TIMEOUT);
             return existingSandboxId;
-          } catch (error) {
+          } catch {
             // Se falhar (sandbox expirado), criar novo
           }
         }
