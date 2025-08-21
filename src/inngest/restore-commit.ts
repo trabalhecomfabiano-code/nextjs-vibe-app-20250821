@@ -83,7 +83,7 @@ export const restoreCommitFunction = inngest.createFunction(
         // Verificar se servidor está respondendo
         try {
           await newSandbox.commands.run('curl -f http://localhost:3000 > /dev/null || echo "Server may not be ready yet"');
-        } catch (checkError) {
+        } catch {
           console.warn("Server health check failed, mas continuando...");
         }
 
