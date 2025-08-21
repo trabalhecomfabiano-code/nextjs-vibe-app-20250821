@@ -79,26 +79,70 @@ export const githubSyncFunction = inngest.createFunction(
           throw new Error(`Git init failed: ${gitInit.stderr}`);
         }
         
-        console.log("📄 Criando .gitignore...");
-        await sandbox.commands.run('echo "node_modules/\\n.next/\\n.env*\\n*.log\\n.wh.*\\n.npm/\\n.bash*\\n.profile\\n.sudo*" > .gitignore');
+        // Reconfigurar Git LOCAL depois do init
+        console.log("⚙️ Reconfigurando Git LOCAL...");
+        await sandbox.commands.run('git config user.name "backup_admin"');
+        await sandbox.commands.run('git config user.email "admin@lasy.ai"');
         
-        console.log("➕ Adicionando arquivos...");
-        const gitAdd = await sandbox.commands.run('git add .');
+        // Criar .gitignore CORRIGIDO
+        console.log("📄 Criando .gitignore CORRIGIDO...");
+        const gitignoreContent = `node_modules/
+.next/
+.git/
+.npm/
+nextjs-app/
+.env*
+*.log
+.wh.*
+.bash*
+.profile
+.sudo*
+.gitconfig`;
+        
+        await sandbox.commands.run(`cat > .gitignore << 'EOF'
+${gitignoreContent}
+EOF`);
+        
+        // Limpar diretórios que não devem ser commitados
+        console.log("🧹 Removendo diretórios que não devem ser commitados...");
+        await sandbox.commands.run('sudo rm -rf .wh.* || true');
+        await sandbox.commands.run('rm -rf .npm/ || true');
+        await sandbox.commands.run('rm -rf .next/ || true'); 
+        await sandbox.commands.run('rm -rf nextjs-app/ || true');
+        await sandbox.commands.run('rm -f .bash* .profile .sudo* .gitconfig || true');
+        
+        // Adicionar apenas arquivos do projeto
+        console.log("➕ Adicionando apenas arquivos do projeto...");
+        const gitAdd = await sandbox.commands.run('git add package.json package-lock.json tsconfig.json next.config.ts components.json postcss.config.mjs README.md app/ components/ hooks/ lib/ public/ .gitignore', { timeoutMs: 300000 });
         if (gitAdd.exitCode !== 0) {
-          console.warn("Git add failed, trying specific files:", gitAdd.stderr);
-          await sandbox.commands.run('git add package.json package-lock.json tsconfig.json next.config.ts components.json postcss.config.mjs README.md app/ components/ hooks/ lib/ public/ nextjs-app/ || true');
+          console.warn("Git add específico falhou, tentando git add .:", gitAdd.stderr);
+          await sandbox.commands.run('git add . || git add -A || true', { timeoutMs: 300000 });
         }
         
         console.log("💾 Fazendo commit...");
-        await sandbox.commands.run(`git commit -m "Auto-sync from Vibe Sandbox - $(date)" || echo "No changes"`);
+        const gitCommit = await sandbox.commands.run(`git commit -m "Auto-sync from Vibe Sandbox - $(date)"`);
+        if (gitCommit.exitCode !== 0) {
+          console.warn("Commit falhou, possível problema de configuração:", gitCommit.stderr);
+          // Reconfigurar Git se necessário e tentar novamente
+          await sandbox.commands.run('git config user.name "backup_admin"');
+          await sandbox.commands.run('git config user.email "admin@lasy.ai"');
+          const retryCommit = await sandbox.commands.run(`git commit -m "Auto-sync from Vibe Sandbox - $(date)"`);
+          if (retryCommit.exitCode !== 0) {
+            console.error("Commit falhou definitivamente:", retryCommit.stderr);
+          }
+        }
         
         console.log("🔗 Adicionando remote origin...");
         await sandbox.commands.run(`git remote add origin ${repoUrl} || git remote set-url origin ${repoUrl}`);
         
         console.log("📤 Fazendo push...");
-        const gitPush = await sandbox.commands.run('git push -u origin master --force');
+        const gitPush = await sandbox.commands.run('git push -u origin master --force', { timeoutMs: 300000 }); // 5 minutos
         if (gitPush.exitCode !== 0) {
-          throw new Error(`Git push failed: ${gitPush.stderr}`);
+          console.warn("Push with -u failed, trying without:", gitPush.stderr);
+          const gitPushRetry = await sandbox.commands.run('git push origin master --force', { timeoutMs: 300000 });
+          if (gitPushRetry.exitCode !== 0) {
+            throw new Error(`Git push failed: ${gitPushRetry.stderr}`);
+          }
         }
         
         // Obter SHA do último commit
