@@ -19,6 +19,32 @@ export const codeAgentFunction = inngest.createFunction(
   { event: "code-agent/run" },
   async ({ event, step }) => {
     const sandboxId = await step.run("get-sandbox-id", async () => {
+      const lastFragment = await prisma.message.findFirst({
+        where: { 
+          projectId: event.data.projectId,
+          fragment: { isNot: null }
+        },
+        include: { fragment: true },
+        orderBy: { createdAt: 'desc' }
+      });
+
+      if (lastFragment?.fragment?.sandboxUrl) {
+        const url = lastFragment.fragment.sandboxUrl;
+        const match = url.match(/https:\/\/3000-([a-zA-Z0-9]+)-[a-zA-Z0-9]+\.e2b\.app/);
+        
+        if (match) {
+          const existingSandboxId = match[1];
+          
+          try {
+            const sandbox = await Sandbox.connect(existingSandboxId);
+            await sandbox.setTimeout(SANDBOX_TIMEOUT);
+            return existingSandboxId;
+          } catch (error) {
+            // Se falhar (sandbox expirado), criar novo
+          }
+        }
+      }
+
       const sandbox = await Sandbox.create("lasy-nextjs-test-2");
       await sandbox.setTimeout(SANDBOX_TIMEOUT);
       return sandbox.sandboxId;
