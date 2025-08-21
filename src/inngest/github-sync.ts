@@ -31,6 +31,7 @@ export const githubSyncFunction = inngest.createFunction(
 
         // Conectar ao sandbox
         const sandbox = await Sandbox.connect(sandboxId);
+        await sandbox.setTimeout(300000); // 5 minutos timeout
         const repoName = `project-${validatedData.projectId}`;
         const repoUrl = `https://${process.env.GITHUB_TOKEN}@github.com/backup_admin/${repoName}.git`;
         
@@ -56,16 +57,48 @@ export const githubSyncFunction = inngest.createFunction(
           console.error("Erro ao criar repositório:", createError);
         }
         
+        // Instalar Git e configurar
+        console.log("🔄 Instalando Git...");
+        const installGit = await sandbox.commands.run('sudo apt-get update && sudo apt-get install -y git');
+        if (installGit.exitCode !== 0) {
+          throw new Error(`Git installation failed: ${installGit.stderr}`);
+        }
+        
         // Comandos Git no sandbox
+        console.log("🧹 Limpando locks do Git...");
         await sandbox.commands.run('rm -f .git/index.lock .git/refs/heads/master.lock');
-        await sandbox.commands.run('git config --global user.name "backup_admin"');
-        await sandbox.commands.run('git config --global user.email "admin@lasy.ai"');
-        await sandbox.commands.run('git init');
+        
+        console.log("⚙️ Configurando Git...");
+        const configName = await sandbox.commands.run('git config --global user.name "backup_admin"');
+        const configEmail = await sandbox.commands.run('git config --global user.email "admin@lasy.ai"');
+        
+        console.log("🎯 Inicializando repositório Git...");
+        const gitInit = await sandbox.commands.run('git init');
+        if (gitInit.exitCode !== 0) {
+          throw new Error(`Git init failed: ${gitInit.stderr}`);
+        }
+        
+        console.log("📄 Criando .gitignore...");
         await sandbox.commands.run('echo "node_modules/\\n.next/\\n.env*\\n*.log\\n.wh.*\\n.npm/\\n.bash*\\n.profile\\n.sudo*" > .gitignore');
-        await sandbox.commands.run('git add package.json package-lock.json tsconfig.json next.config.ts components.json postcss.config.mjs README.md app/ components/ hooks/ lib/ public/ nextjs-app/ || true');
-        await sandbox.commands.run(`git commit -m "Auto-sync from Vibe Sandbox - $(date)" || echo "No changes"`);
+        
+        console.log("➕ Adicionando arquivos...");
+        const gitAdd = await sandbox.commands.run('git add .');
+        if (gitAdd.exitCode !== 0) {
+          console.warn("Git add failed, trying specific files:", gitAdd.stderr);
+          await sandbox.commands.run('git add package.json package-lock.json tsconfig.json next.config.ts components.json postcss.config.mjs README.md app/ components/ hooks/ lib/ public/ nextjs-app/ || true');
+        }
+        
+        console.log("💾 Fazendo commit...");
+        const gitCommit = await sandbox.commands.run(`git commit -m "Auto-sync from Vibe Sandbox - $(date)" || echo "No changes"`);
+        
+        console.log("🔗 Adicionando remote origin...");
         await sandbox.commands.run(`git remote add origin ${repoUrl} || git remote set-url origin ${repoUrl}`);
-        await sandbox.commands.run('git push -u origin master --force');
+        
+        console.log("📤 Fazendo push...");
+        const gitPush = await sandbox.commands.run('git push -u origin master --force');
+        if (gitPush.exitCode !== 0) {
+          throw new Error(`Git push failed: ${gitPush.stderr}`);
+        }
         
         return {
           success: true,
