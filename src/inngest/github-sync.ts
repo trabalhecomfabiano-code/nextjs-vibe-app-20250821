@@ -69,8 +69,8 @@ export const githubSyncFunction = inngest.createFunction(
         await sandbox.commands.run('rm -f .git/index.lock .git/refs/heads/master.lock');
         
         console.log("⚙️ Configurando Git...");
-        const configName = await sandbox.commands.run('git config --global user.name "backup_admin"');
-        const configEmail = await sandbox.commands.run('git config --global user.email "admin@lasy.ai"');
+        await sandbox.commands.run('git config --global user.name "backup_admin"');
+        await sandbox.commands.run('git config --global user.email "admin@lasy.ai"');
         
         console.log("🎯 Inicializando repositório Git...");
         const gitInit = await sandbox.commands.run('git init');
@@ -89,7 +89,7 @@ export const githubSyncFunction = inngest.createFunction(
         }
         
         console.log("💾 Fazendo commit...");
-        const gitCommit = await sandbox.commands.run(`git commit -m "Auto-sync from Vibe Sandbox - $(date)" || echo "No changes"`);
+        await sandbox.commands.run(`git commit -m "Auto-sync from Vibe Sandbox - $(date)" || echo "No changes"`);
         
         console.log("🔗 Adicionando remote origin...");
         await sandbox.commands.run(`git remote add origin ${repoUrl} || git remote set-url origin ${repoUrl}`);
