@@ -281,6 +281,20 @@ export const codeAgentFunction = inngest.createFunction(
       })
     });
 
+    await step.run("trigger-github-sync", async () => {
+      if (!isError && result.state.data.files) {
+        await inngest.send({
+          name: "github-sync/project",
+          data: {
+            projectId: event.data.projectId,
+            files: result.state.data.files,
+            sandboxUrl: sandboxUrl,
+            title: parseAgentOutput(fragmentTitleOuput),
+          }
+        });
+      }
+    });
+
     return { 
       url: sandboxUrl,
       title: "Fragment",
