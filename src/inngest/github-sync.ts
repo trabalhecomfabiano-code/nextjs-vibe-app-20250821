@@ -65,15 +65,15 @@ export const githubSyncFunction = inngest.createFunction(
           throw new Error(`Git installation failed: ${installGit.stderr}`);
         }
         
-        // Comandos Git no sandbox
-        console.log("🧹 Limpando locks do Git...");
-        await sandbox.commands.run('rm -f .git/index.lock .git/refs/heads/master.lock');
+        // Comandos Git no sandbox - LIMPAR ESTADO ANTERIOR PRIMEIRO
+        console.log("🗑️ Limpando repositório Git anterior...");
+        await sandbox.commands.run('rm -rf .git');
         
-        console.log("⚙️ Configurando Git...");
+        console.log("⚙️ Configurando Git globalmente...");
         await sandbox.commands.run('git config --global user.name "backup_admin"');
         await sandbox.commands.run('git config --global user.email "admin@lasy.ai"');
         
-        console.log("🎯 Inicializando repositório Git...");
+        console.log("🎯 Inicializando repositório Git limpo...");
         const gitInit = await sandbox.commands.run('git init');
         if (gitInit.exitCode !== 0) {
           throw new Error(`Git init failed: ${gitInit.stderr}`);
