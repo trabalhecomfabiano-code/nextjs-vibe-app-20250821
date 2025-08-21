@@ -36,28 +36,6 @@ export const githubSyncFunction = inngest.createFunction(
         const repoName = `project-${validatedData.projectId}`;
         const repoUrl = `https://${process.env.GITHUB_TOKEN}@github.com/backup_admin/${repoName}.git`;
         
-        // Criar repositório no GitHub primeiro
-        try {
-          const response = await fetch('https://api.github.com/user/repos', {
-            method: 'POST',
-            headers: {
-              'Authorization': `token ${process.env.GITHUB_TOKEN}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              name: repoName,
-              description: "Auto-generated Vibe Project",
-              private: true,
-            }),
-          });
-          
-          if (response.status === 422) {
-            console.log("Repositório já existe, atualizando...");
-          }
-        } catch (createError) {
-          console.error("Erro ao criar repositório:", createError);
-        }
-        
         // Instalar Git e configurar
         console.log("🔄 Instalando Git...");
         const installGit = await sandbox.commands.run('sudo apt-get update && sudo apt-get install -y git');
@@ -65,22 +43,78 @@ export const githubSyncFunction = inngest.createFunction(
           throw new Error(`Git installation failed: ${installGit.stderr}`);
         }
         
-        // Comandos Git no sandbox - LIMPAR ESTADO ANTERIOR PRIMEIRO
-        console.log("🗑️ Limpando repositório Git anterior...");
-        await sandbox.commands.run('rm -rf .git');
-        
         console.log("⚙️ Configurando Git globalmente...");
         await sandbox.commands.run('git config --global user.name "backup_admin"');
         await sandbox.commands.run('git config --global user.email "admin@lasy.ai"');
         
-        console.log("🎯 Inicializando repositório Git limpo...");
-        const gitInit = await sandbox.commands.run('git init');
-        if (gitInit.exitCode !== 0) {
-          throw new Error(`Git init failed: ${gitInit.stderr}`);
+        // Verificar se o repositório já existe no GitHub
+        console.log("🔍 Verificando se repositório já existe no GitHub...");
+        let repoExists = false;
+        try {
+          const repoCheckResponse = await fetch(`https://api.github.com/repos/backup_admin/${repoName}`, {
+            headers: {
+              'Authorization': `token ${process.env.GITHUB_TOKEN}`,
+            },
+          });
+          repoExists = repoCheckResponse.status === 200;
+          console.log(`Repositório ${repoExists ? 'já existe' : 'não existe'} no GitHub`);
+        } catch (checkError) {
+          console.log("Erro ao verificar repositório, assumindo que não existe");
+        }
+
+        // Limpar qualquer estado Git local anterior
+        console.log("🗑️ Limpando repositório Git local anterior...");
+        await sandbox.commands.run('rm -rf .git');
+
+        if (repoExists) {
+          // Clonar repositório existente para preservar histórico
+          console.log("📥 Clonando repositório existente para preservar histórico...");
+          const gitClone = await sandbox.commands.run(`git clone ${repoUrl} temp-repo`, { timeoutMs: 300000 });
+          if (gitClone.exitCode !== 0) {
+            throw new Error(`Git clone failed: ${gitClone.stderr}`);
+          }
+
+          // Mover .git do repositório clonado para o diretório atual
+          await sandbox.commands.run('mv temp-repo/.git .');
+          await sandbox.commands.run('rm -rf temp-repo');
+          
+          // Resetar working directory para match com o estado atual do sandbox
+          console.log("🔄 Sincronizando estado do repositório...");
+          await sandbox.commands.run('git reset --hard HEAD');
+        } else {
+          // Criar novo repositório no GitHub
+          console.log("🆕 Criando novo repositório no GitHub...");
+          try {
+            const response = await fetch('https://api.github.com/user/repos', {
+              method: 'POST',
+              headers: {
+                'Authorization': `token ${process.env.GITHUB_TOKEN}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                name: repoName,
+                description: "Auto-generated Vibe Project",
+                private: true,
+              }),
+            });
+            
+            if (response.status !== 201) {
+              throw new Error(`Failed to create repository: ${response.status}`);
+            }
+          } catch (createError) {
+            throw new Error(`Repository creation failed: ${createError.message}`);
+          }
+
+          // Inicializar novo repositório Git
+          console.log("🎯 Inicializando novo repositório Git...");
+          const gitInit = await sandbox.commands.run('git init');
+          if (gitInit.exitCode !== 0) {
+            throw new Error(`Git init failed: ${gitInit.stderr}`);
+          }
         }
         
-        // Reconfigurar Git LOCAL depois do init
-        console.log("⚙️ Reconfigurando Git LOCAL...");
+        // Reconfigurar Git LOCAL 
+        console.log("⚙️ Configurando Git local...");
         await sandbox.commands.run('git config user.name "backup_admin"');
         await sandbox.commands.run('git config user.email "admin@lasy.ai"');
         
@@ -119,7 +153,41 @@ EOF`);
           await sandbox.commands.run('git add . || git add -A || true', { timeoutMs: 300000 });
         }
         
-        console.log("💾 Fazendo commit...");
+        // Verificar se há mudanças para commitar
+        console.log("📊 Verificando se há mudanças para commitar...");
+        const gitStatus = await sandbox.commands.run('git status --porcelain');
+        const hasChanges = gitStatus.stdout.trim().length > 0;
+        
+        if (!hasChanges) {
+          console.log("ℹ️ Nenhuma mudança detectada, obtendo commit atual...");
+          const getCommitSha = await sandbox.commands.run('git rev-parse HEAD');
+          const commitSha = getCommitSha.stdout.trim();
+          
+          if (commitSha) {
+            console.log(`💾 Usando commit SHA existente: ${commitSha}`);
+            // Atualizar fragment com commitSha
+            await prisma.fragment.updateMany({
+              where: {
+                repositoryName: repoName,
+                commitSha: null,
+              },
+              data: {
+                commitSha: commitSha,
+              },
+            });
+          }
+          
+          return {
+            success: true,
+            repoUrl: `https://github.com/backup_admin/${repoName}`,
+            action: "no-changes",
+            projectId: validatedData.projectId,
+            filesCount: Object.keys(validatedData.files).length,
+            commitSha: commitSha,
+          };
+        }
+
+        console.log("💾 Fazendo commit das mudanças...");
         const gitCommit = await sandbox.commands.run(`git commit -m "Auto-sync from Vibe Sandbox - $(date)"`);
         if (gitCommit.exitCode !== 0) {
           console.warn("Commit falhou, possível problema de configuração:", gitCommit.stderr);
@@ -128,18 +196,26 @@ EOF`);
           await sandbox.commands.run('git config user.email "admin@lasy.ai"');
           const retryCommit = await sandbox.commands.run(`git commit -m "Auto-sync from Vibe Sandbox - $(date)"`);
           if (retryCommit.exitCode !== 0) {
-            console.error("Commit falhou definitivamente:", retryCommit.stderr);
+            throw new Error(`Commit falhou definitivamente: ${retryCommit.stderr}`);
           }
         }
         
-        console.log("🔗 Adicionando remote origin...");
+        console.log("🔗 Configurando remote origin...");
         await sandbox.commands.run(`git remote add origin ${repoUrl} || git remote set-url origin ${repoUrl}`);
         
         console.log("📤 Fazendo push...");
-        const gitPush = await sandbox.commands.run('git push -u origin master --force', { timeoutMs: 300000 }); // 5 minutos
+        // Para repos existentes, fazer push normal (não forçado) para preservar histórico
+        const pushCommand = repoExists ? 
+          'git push -u origin master' : 
+          'git push -u origin master --force';
+        
+        const gitPush = await sandbox.commands.run(pushCommand, { timeoutMs: 300000 });
         if (gitPush.exitCode !== 0) {
           console.warn("Push with -u failed, trying without:", gitPush.stderr);
-          const gitPushRetry = await sandbox.commands.run('git push origin master --force', { timeoutMs: 300000 });
+          const retryPushCommand = repoExists ? 
+            'git push origin master' : 
+            'git push origin master --force';
+          const gitPushRetry = await sandbox.commands.run(retryPushCommand, { timeoutMs: 300000 });
           if (gitPushRetry.exitCode !== 0) {
             throw new Error(`Git push failed: ${gitPushRetry.stderr}`);
           }
