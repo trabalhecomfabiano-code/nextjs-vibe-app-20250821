@@ -58,7 +58,7 @@ export const githubSyncFunction = inngest.createFunction(
           });
           repoExists = repoCheckResponse.status === 200;
           console.log(`Repositório ${repoExists ? 'já existe' : 'não existe'} no GitHub`);
-        } catch (checkError) {
+        } catch {
           console.log("Erro ao verificar repositório, assumindo que não existe");
         }
 
@@ -102,7 +102,7 @@ export const githubSyncFunction = inngest.createFunction(
               throw new Error(`Failed to create repository: ${response.status}`);
             }
           } catch (createError) {
-            throw new Error(`Repository creation failed: ${createError.message}`);
+            throw new Error(`Repository creation failed: ${createError instanceof Error ? createError.message : String(createError)}`);
           }
 
           // Inicializar novo repositório Git
