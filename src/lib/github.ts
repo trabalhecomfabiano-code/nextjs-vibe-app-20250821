@@ -23,15 +23,15 @@ export async function createOrUpdateRepository(data: GitHubSyncData) {
   
   try {
     // Check if repository exists
-    const { data: repo } = await octokit.rest.repos.get({
+    await octokit.rest.repos.get({
       owner: GITHUB_ORG,
       repo: repoName,
     });
     
     // Repository exists, update it
     return await updateRepository(repoName, data);
-  } catch (error: any) {
-    if (error.status === 404) {
+  } catch (error: unknown) {
+    if (error && typeof error === 'object' && 'status' in error && error.status === 404) {
       // Repository doesn't exist, create it
       return await createRepository(repoName, data);
     }
