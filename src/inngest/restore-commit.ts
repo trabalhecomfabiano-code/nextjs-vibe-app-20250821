@@ -53,31 +53,39 @@ export const restoreCommitFunction = inngest.createFunction(
 
         // 4. Clonar repositório GitHub
         console.log(`📥 Clonando repositório ${fragment.repositoryName}...`);
-        const gitClone = await newSandbox.commands.run(`git clone ${repoUrl} .`);
+        const gitClone = await newSandbox.commands.run(`git clone ${repoUrl} .`, { timeoutMs: 300000 });
         if (gitClone.exitCode !== 0) {
           throw new Error(`Git clone failed: ${gitClone.stderr}`);
         }
 
         // 5. Checkout commit específico
         console.log(`🔄 Fazendo checkout do commit ${fragment.commitSha}...`);
-        const gitCheckout = await newSandbox.commands.run(`git checkout ${fragment.commitSha}`);
+        const gitCheckout = await newSandbox.commands.run(`git checkout ${fragment.commitSha}`, { timeoutMs: 120000 });
         if (gitCheckout.exitCode !== 0) {
           throw new Error(`Git checkout failed: ${gitCheckout.stderr}`);
         }
 
         // 6. Instalar dependências
         console.log("📦 Instalando dependências...");
-        const npmInstall = await newSandbox.commands.run('npm install');
+        const npmInstall = await newSandbox.commands.run('npm install', { timeoutMs: 300000 }); // 5 minutos
         if (npmInstall.exitCode !== 0) {
-          console.warn("NPM install failed, continuando...", npmInstall.stderr);
+          console.warn("NPM install failed, continuando sem dependências...", npmInstall.stderr);
         }
 
         // 7. Iniciar dev server em background
         console.log("🚀 Iniciando servidor de desenvolvimento...");
         await newSandbox.commands.run('nohup npm run dev > /dev/null 2>&1 &');
         
-        // Aguardar um momento para o servidor iniciar
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        // Aguardar servidor iniciar e verificar se está rodando
+        console.log("⏳ Aguardando servidor inicializar...");
+        await new Promise(resolve => setTimeout(resolve, 5000)); // Aumentado para 5s
+        
+        // Verificar se servidor está respondendo
+        try {
+          await newSandbox.commands.run('curl -f http://localhost:3000 > /dev/null || echo "Server may not be ready yet"');
+        } catch (checkError) {
+          console.warn("Server health check failed, mas continuando...");
+        }
 
         // 8. Obter nova sandboxUrl
         const newSandboxUrl = `https://${newSandbox.getHost(3000)}`;
